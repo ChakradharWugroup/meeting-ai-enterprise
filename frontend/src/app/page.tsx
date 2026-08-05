@@ -61,10 +61,11 @@ export default function Dashboard() {
         setBotUrl('');
         setScheduledTime('');
       } else {
-        setDispatchStatus('❌ Failed to dispatch bot');
+        const errorText = await res.text();
+        setDispatchStatus(`❌ Error ${res.status}: ${errorText.substring(0, 50)}`);
       }
     } catch (e) {
-      setDispatchStatus('❌ Backend unreachable');
+      setDispatchStatus(`❌ Backend unreachable: ${e}`);
     }
     setTimeout(() => setDispatchStatus(''), 5000);
   };
