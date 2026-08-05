@@ -9,6 +9,12 @@ from backend.ai.summarizer import MeetingSummarizer
 from backend.teams.webhook import webhook_router
 from backend.api.pdf_generator import generate_meeting_pdf
 from fastapi.responses import StreamingResponse
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from datetime import datetime
+from pydantic import BaseModel
+
+scheduler = AsyncIOScheduler()
+scheduler.start()
 
 app = FastAPI(
     title="Enterprise AI Meeting Assistant API",
@@ -120,6 +126,48 @@ async def dispatch_bot(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class ScheduleRequest(BaseModel):
+    url: str
+    scheduled_time: str # ISO format string
+
+@app.post("/meeting/schedule", tags=["Meetings"])
+async def schedule_meeting(req: ScheduleRequest):
+    try:
+        meeting_time = datetime.fromisoformat(req.scheduled_time.replace("Z", "+00:00"))
+        meeting_id = f"mtg-{hash(req.url) % 10000}"
+        
+        def job_func(url_val, m_id):
+            bot_dir = "/app/teams-bot" if os.path.exists("/app/teams-bot") else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "teams-bot")
+            import subprocess
+            subprocess.Popen(
+                ["node", "join_meeting.js", url_val, m_id],
+                cwd=bot_dir,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            # Update status to live when bot actually joins
+            for m in dynamic_meetings:
+                if m["id"] == m_id:
+                    m["status"] = "live"
+                    m["summary"] = "AI Notetaker has joined and is listening..."
+                    break
+                    
+        scheduler.add_job(job_func, 'date', run_date=meeting_time, args=[req.url, meeting_id])
+        
+        dynamic_meetings.insert(0, {
+            "id": meeting_id,
+            "title": f"Scheduled Session ({meeting_id[-4:]})",
+            "status": "scheduled",
+            "participants": 0,
+            "duration": "0m",
+            "summary": f"Scheduled for {meeting_time.strftime('%Y-%m-%d %H:%M')}",
+            "sentiment": "Neutral"
+        })
+        
+        return {"status": "success", "message": "Meeting scheduled successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/meetings", tags=["Meetings"])
 async def list_meetings():
     # Return mock meetings to populate the premium UI dashboard
@@ -174,10 +222,13 @@ async def download_meeting_pdf(meeting_id: str):
     
     pdf_buffer = generate_meeting_pdf(title, summary, transcript)
     
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    filename = f"Transcript_{current_time}.pdf"
+    
     return StreamingResponse(
         pdf_buffer,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=meeting_{meeting_id}_report.pdf"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 if __name__ == "__main__":

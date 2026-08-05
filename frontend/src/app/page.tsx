@@ -17,6 +17,7 @@ export default function Dashboard() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [botUrl, setBotUrl] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
   const [dispatchStatus, setDispatchStatus] = useState('');
 
   useEffect(() => {
@@ -46,14 +47,19 @@ export default function Dashboard() {
     setDispatchStatus('Dispatching...');
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${apiUrl}/dispatch`, {
+      
+      const endpoint = scheduledTime ? '/meeting/schedule' : '/dispatch';
+      const payload = scheduledTime ? { url: botUrl, scheduled_time: new Date(scheduledTime).toISOString() } : { url: botUrl };
+      
+      const res = await fetch(`${apiUrl}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: botUrl })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
-        setDispatchStatus('✅ AI Notetaker Dispatched!');
+        setDispatchStatus(scheduledTime ? '✅ AI Notetaker Scheduled!' : '✅ AI Notetaker Dispatched!');
         setBotUrl('');
+        setScheduledTime('');
       } else {
         setDispatchStatus('❌ Failed to dispatch bot');
       }
@@ -100,7 +106,7 @@ export default function Dashboard() {
                 <h2 className="text-2xl font-bold text-white mb-2">Send the AI Notetaker</h2>
                 <p className="text-neutral-400">Paste your Microsoft Teams meeting link below, and the AI bot will automatically join as a guest.</p>
               </div>
-              <form onSubmit={handleDispatch} className="flex w-full md:w-auto gap-3">
+              <form onSubmit={handleDispatch} className="flex flex-col md:flex-row w-full md:w-auto gap-3">
                 <input 
                   type="text" 
                   value={botUrl}
@@ -108,12 +114,19 @@ export default function Dashboard() {
                   placeholder="https://teams.microsoft.com/l/meetup-join/..." 
                   className="flex-1 md:w-80 bg-neutral-900 border border-neutral-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-neutral-600"
                 />
+                <input 
+                  type="datetime-local" 
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="bg-neutral-900 border border-neutral-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all text-sm"
+                  title="Leave empty to join immediately"
+                />
                 <button 
                   type="submit"
                   disabled={!botUrl || dispatchStatus === 'Dispatching...'}
                   className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:hover:bg-purple-600 text-white px-6 py-2 rounded-lg font-medium transition-colors whitespace-nowrap shadow-[0_0_15px_rgba(147,51,234,0.3)] hover:shadow-[0_0_20px_rgba(147,51,234,0.5)]"
                 >
-                  Dispatch Bot
+                  {scheduledTime ? 'Schedule Bot' : 'Dispatch Bot'}
                 </button>
               </form>
             </div>
