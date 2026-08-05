@@ -19,6 +19,8 @@ export default function Dashboard() {
   const [botUrl, setBotUrl] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
   const [dispatchStatus, setDispatchStatus] = useState('');
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     const fetchMeetings = async () => {
@@ -68,6 +70,39 @@ export default function Dashboard() {
       setDispatchStatus(`❌ Backend unreachable: ${e}`);
     }
     setTimeout(() => setDispatchStatus(''), 5000);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    setIsUploading(true);
+    setUploadStatus('Uploading file...');
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
+      const res = await fetch(`${apiUrl}/meeting/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (res.ok) {
+        setUploadStatus('✅ Upload complete! Processing...');
+      } else {
+        const errorText = await res.text();
+        setUploadStatus(`❌ Upload failed: ${errorText.substring(0, 50)}`);
+      }
+    } catch (e) {
+      setUploadStatus(`❌ Network error: ${e}`);
+    } finally {
+      setIsUploading(false);
+      setTimeout(() => setUploadStatus(''), 8000);
+      // Reset input
+      e.target.value = '';
+    }
   };
 
   const handleDownloadPdf = (meetingId: string) => {
@@ -134,6 +169,23 @@ export default function Dashboard() {
             {dispatchStatus && (
               <p className="mt-4 text-sm font-medium text-purple-400 animate-pulse">{dispatchStatus}</p>
             )}
+            
+            <div className="mt-6 pt-6 border-t border-neutral-700/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-2">Upload Local Recording</h3>
+                <p className="text-neutral-400 text-sm">Have a video or audio file? Upload it directly for AI transcription and intelligence extraction.</p>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <label className={`cursor-pointer bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white px-6 py-2 rounded-lg font-medium transition-all shadow-sm flex items-center gap-2 ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  {isUploading ? 'Uploading...' : 'Select Video/Audio File'}
+                  <input type="file" className="hidden" accept="video/*,audio/*" onChange={handleFileUpload} disabled={isUploading} />
+                </label>
+                {uploadStatus && (
+                  <p className="text-sm font-medium text-cyan-400 animate-pulse">{uploadStatus}</p>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 

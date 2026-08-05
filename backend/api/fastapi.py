@@ -1,6 +1,10 @@
-from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, status, Request, WebSocket, WebSocketDisconnect, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import shutil
+import tempfile
+import subprocess
+import asyncio
 
 # Import our enterprise modules
 from backend.streaming.audio_receiver import AudioReceiver
@@ -168,6 +172,77 @@ async def schedule_meeting(req: ScheduleRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
+    try:
+        # Extract and compress audio using ffmpeg
+        audio_path = file_path + ".wav"
+        print(f"Extracting audio from {file_path} to {audio_path}")
+        # 16kHz, mono, 32kbps to heavily compress for Groq's 25MB limit
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+        
+        # Read the audio bytes
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+            
+        print(f"Transcribing {len(audio_bytes)} bytes...")
+        transcript = await transcriber.transcribe(audio_bytes)
+        
+        # We need a string summary from the model
+        summary = "Uploaded Recording Transcript:\n\n" + (transcript if isinstance(transcript, str) else transcript.text)
+        
+        # Add to completed meetings
+        dynamic_meetings.insert(0, {
+            "id": meeting_id,
+            "title": f"Uploaded: {filename}",
+            "status": "completed",
+            "participants": 2,
+            "duration": "N/A",
+            "summary": summary[:200] + "...",
+            "sentiment": "Neutral",
+            "full_transcript": summary
+        })
+        
+        # Cleanup
+        os.remove(file_path)
+        os.remove(audio_path)
+        print(f"Upload {meeting_id} processed successfully.")
+    except Exception as e:
+        print(f"Error processing upload {meeting_id}: {e}")
+        # Clean up if failed
+        if os.path.exists(file_path): os.remove(file_path)
+        if os.path.exists(file_path + ".wav"): os.remove(file_path + ".wav")
+
+@app.post("/meeting/upload", tags=["Meetings"])
+async def upload_meeting_recording(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    try:
+        meeting_id = f"up-{hash(file.filename) % 10000}"
+        
+        # Save to temp file
+        fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.filename)[1])
+        with os.fdopen(fd, 'wb') as f:
+            shutil.copyfileobj(file.file, f)
+            
+        # Add a "processing" entry so the UI sees it in active sessions!
+        dynamic_meetings.insert(0, {
+            "id": meeting_id,
+            "title": f"Processing: {file.filename}",
+            "status": "live",
+            "participants": 1,
+            "duration": "0m",
+            "summary": "Extracting audio and crunching AI transcript...",
+            "sentiment": "Processing"
+        })
+            
+        background_tasks.add_task(process_uploaded_file, temp_path, meeting_id, file.filename)
+        return {"status": "success", "message": "File uploaded and processing started in background."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/meetings", tags=["Meetings"])
 async def list_meetings():
     # Return mock meetings to populate the premium UI dashboard
@@ -218,7 +293,7 @@ async def download_meeting_pdf(meeting_id: str):
     
     title = meeting["title"] if meeting else f"Meeting {meeting_id}"
     summary = meeting["summary"] if meeting else "AI Notetaker generated summary."
-    transcript = "" # We'll use the default mock in the pdf generator
+    transcript = meeting.get("full_transcript", "") # Use full transcript if it was an uploaded file
     
     pdf_buffer = generate_meeting_pdf(title, summary, transcript)
     
