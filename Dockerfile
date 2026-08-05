@@ -31,7 +31,7 @@ COPY backend/ ./backend/
 COPY teams-bot/ ./teams-bot/
 
 # Install Node dependencies for Playwright
-RUN cd teams-bot && npm install playwright ws && npx playwright install --with-deps chromium
+RUN cd teams-bot && rm -rf node_modules && npm install playwright ws && npx playwright install --with-deps chromium
 
 # Expose port (Render automatically assigns $PORT, but we default to 8000)
 EXPOSE 8000
