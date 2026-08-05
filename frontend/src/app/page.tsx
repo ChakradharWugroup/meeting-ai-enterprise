@@ -23,8 +23,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchMeetings = async () => {
       try {
-        const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const apiUrl = rawApiUrl.replace(/\/+$/, '');
+        const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
         const res = await fetch(`${apiUrl}/meetings`);
         if (res.ok) {
           const data = await res.json();
@@ -47,8 +46,7 @@ export default function Dashboard() {
     if (!botUrl) return;
     setDispatchStatus('Dispatching...');
     try {
-      const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const apiUrl = rawApiUrl.replace(/\/+$/, '');
+      const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
       
       const endpoint = scheduledTime ? '/meeting/schedule' : '/dispatch';
       const payload = scheduledTime ? { url: botUrl, scheduled_time: new Date(scheduledTime).toISOString() } : { url: botUrl };
@@ -73,8 +71,7 @@ export default function Dashboard() {
   };
 
   const handleDownloadPdf = (meetingId: string) => {
-    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const apiUrl = rawApiUrl.replace(/\/+$/, '');
+    const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
     window.open(`${apiUrl}/meeting/${meetingId}/pdf`, '_blank');
   };
 
