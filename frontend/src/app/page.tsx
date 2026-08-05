@@ -147,17 +147,17 @@ export default function Dashboard() {
             <div className="lg:col-span-1 space-y-6">
               <h2 className="text-xl font-bold flex items-center gap-3">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.8)]"></span>
-                Active Sessions
+                Active & Scheduled
               </h2>
-              {meetings.filter((m) => m.status === 'live').map((meeting) => (
+              {meetings.filter((m) => m.status === 'live' || m.status === 'scheduled').map((meeting) => (
                 <div key={meeting.id} className="relative group rounded-2xl p-[1px] overflow-hidden bg-gradient-to-b from-purple-500/30 to-transparent transition-all duration-300 hover:shadow-[0_0_30px_rgba(168,85,247,0.15)]">
                   <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                   <div className="relative bg-gray-900/90 backdrop-blur-xl p-6 rounded-2xl h-full border border-white/5">
                     <div className="flex justify-between items-start mb-4">
                       <h3 className="font-semibold text-lg">{meeting.title}</h3>
-                      <span className="px-3 py-1 text-xs font-bold rounded-full bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
-                        LIVE
+                      <span className={`px-3 py-1 text-xs font-bold rounded-full flex items-center gap-1.5 ${meeting.status === 'live' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'} border`}>
+                        {meeting.status === 'live' ? <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                        {meeting.status === 'live' ? 'LIVE' : 'SCHEDULED'}
                       </span>
                     </div>
                     <p className="text-gray-400 text-sm mb-4 line-clamp-2">{meeting.summary}</p>
