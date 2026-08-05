@@ -35,9 +35,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY backend/ ./backend/
+COPY teams-bot/ ./teams-bot/
 
-# Expose the API port
+# Expose the API port (Default 8000, but overridden by Render)
 EXPOSE 8000
 
-# Run the FastAPI server
-CMD ["uvicorn", "backend.api.fastapi:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the FastAPI server using dynamic Render $PORT
+CMD sh -c "uvicorn backend.api.fastapi:app --host 0.0.0.0 --port ${PORT:-8000}"
