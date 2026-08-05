@@ -72,6 +72,11 @@ async def websocket_audio_endpoint(websocket: WebSocket, meeting_id: str):
             await receiver.ingest_audio_chunk(data, timestamp)
     except WebSocketDisconnect:
         print(f"Client disconnected from meeting {meeting_id}")
+        # Automatically transition the meeting to completed so UI updates!
+        for m in dynamic_meetings:
+            if m["id"] == meeting_id:
+                m["status"] = "completed"
+                break
     except Exception as e:
         print(f"WebSocket error: {e}")
 
