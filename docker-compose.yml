@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: meeting-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: meeting_intelligence
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: meeting-ollama
+    ports:
+      - "11435:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+    # Uncomment the following to enable GPU support if available (requires Docker setup for NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: meeting-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./teams-bot:/app/teams-bot
+    depends_on:
+      - db
+      - ollama
+    environment:
+      - DATABASE_URL=postgresql://admin:password@db:5432/meeting_intelligence
+      - OLLAMA_HOST=http://ollama:11434
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: meeting-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://192.168.1.105:8000
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  ollama:

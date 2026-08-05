@@ -1,0 +1,13 @@
+{
+  "name": "teams-headless-bot",
+  "version": "1.0.0",
+  "description": "Headless browser bot to join Teams meetings and capture audio.",
+  "main": "join_meeting.js",
+  "scripts": {
+    "start": "node join_meeting.js"
+  },
+  "dependencies": {
+    "playwright": "^1.42.0",
+    "ws": "^8.16.0"
+  }
+}
