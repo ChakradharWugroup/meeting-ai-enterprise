@@ -1,21 +1,43 @@
-import io
 import os
-from faster_whisper import WhisperModel
+import io
+import tempfile
+from groq import Groq
 
 class WhisperTranscriber:
-    def __init__(self, model_size: str = "base"):
-        # CPU is used by default if GPU is not available
-        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    def __init__(self, model_size: str = "whisper-large-v3"):
+        self.api_key = os.environ.get("GROQ_API_KEY", "")
+        if self.api_key:
+            self.client = Groq(api_key=self.api_key)
+        else:
+            self.client = None
+            print("WARNING: GROQ_API_KEY is not set. Transcription will be mocked.")
+        self.model = model_size
 
     async def transcribe(self, audio_bytes: bytes, language: str = "en") -> str:
         """
-        Transcribes audio bytes to text using local faster-whisper.
+        Transcribes audio bytes to text using Groq Cloud API.
         """
-        print(f"Transcribing {len(audio_bytes)} bytes locally using faster-whisper...")
+        if not self.client or len(audio_bytes) < 1000:
+            return "[Mock Transcription] Hello from cloud API."
+
+        print(f"Transcribing {len(audio_bytes)} bytes using Groq API...")
         
-        # In a real app, write bytes to a temp file or use io.BytesIO
-        # Mocking the actual call for structural purposes:
-        # segments, info = self.model.transcribe("temp_audio.wav", language=language)
-        # text = " ".join([segment.text for segment in segments])
-        
-        return "[Local Transcription] We need to align on the enterprise architecture."
+        # Groq requires a file-like object with a filename
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+            temp_audio.write(audio_bytes)
+            temp_audio_path = temp_audio.name
+            
+        try:
+            with open(temp_audio_path, "rb") as file:
+                transcription = self.client.audio.transcriptions.create(
+                    file=(temp_audio_path, file.read()),
+                    model=self.model,
+                    response_format="text",
+                    language=language
+                )
+            os.remove(temp_audio_path)
+            return transcription
+        except Exception as e:
+            print(f"Groq API Error: {e}")
+            os.remove(temp_audio_path)
+            return f"[Error transcribing: {str(e)}]"
