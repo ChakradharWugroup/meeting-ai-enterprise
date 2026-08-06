@@ -181,16 +181,16 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
         chunk_prefix = file_path + "_chunk_"
         print(f"Extracting and chunking audio from {file_path}")
         
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", file_path, 
-                "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1",
-                "-f", "segment", "-segment_time", "1800", f"{chunk_prefix}%03d.mp3"
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", file_path, 
+            "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1",
+            "-f", "segment", "-segment_time", "1800", f"{chunk_prefix}%03d.mp3",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
         )
+        await proc.communicate()
+        if proc.returncode != 0:
+            raise Exception("ffmpeg failed to process video")
         
         # Find all generated chunks
         chunks = sorted(glob.glob(f"{chunk_prefix}*.mp3"))
