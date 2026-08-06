@@ -266,7 +266,17 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
             
         print(f"Upload {meeting_id} processed successfully.")
     except Exception as e:
-        print(f"Error processing upload {meeting_id}: {e}")
+        error_msg = f"Error processing upload: {str(e)}"
+        print(f"{error_msg} for {meeting_id}")
+        
+        # Update UI to show the error
+        for m in dynamic_meetings:
+            if m["id"] == meeting_id:
+                m["status"] = "completed"
+                m["summary"] = error_msg
+                m["full_transcript"] = error_msg
+                break
+                
         # Clean up if failed
         if os.path.exists(file_path): os.remove(file_path)
         import glob

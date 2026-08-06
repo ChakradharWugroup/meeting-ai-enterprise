@@ -1,6 +1,7 @@
 import io
 import time
 from datetime import datetime
+from xml.sax.saxutils import escape
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -104,10 +105,10 @@ def generate_meeting_pdf(meeting_title: str, summary: str, transcript: str, segm
     # Transcript segments
     if segments:
         for seg in segments:
-            speaker = seg.get('speaker', 'Speaker')
-            start_fmt = format_time(seg.get('start', 0.0))
-            end_fmt = format_time(seg.get('end', 0.0))
-            text = seg.get('text', '')
+            speaker = escape(seg.get('speaker', 'Speaker'))
+            start_fmt = escape(format_time(seg.get('start', 0.0)))
+            end_fmt = escape(format_time(seg.get('end', 0.0)))
+            text = escape(seg.get('text', ''))
             
             # Speaker line
             elements.append(Paragraph(f"{speaker} ({start_fmt} - {end_fmt})", speaker_style))
@@ -118,7 +119,7 @@ def generate_meeting_pdf(meeting_title: str, summary: str, transcript: str, segm
         if not transcript:
             transcript = "No transcript generated."
         for line in transcript.split('\n'):
-            elements.append(Paragraph(line, body_style))
+            elements.append(Paragraph(escape(line), body_style))
         
     doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
     buffer.seek(0)
