@@ -9,7 +9,6 @@ import asyncio
 # Import our enterprise modules
 from backend.streaming.audio_receiver import AudioReceiver
 from backend.ai.whisper import WhisperTranscriber
-from backend.ai.groq import GroqLLM
 from backend.ai.whisper import WhisperTranscriber
 from backend.ai.deepgram_ai import DeepgramAI
 from backend.ai.pyannote_diarizer import PyannoteDiarizer
@@ -44,7 +43,6 @@ app.include_router(webhook_router)
 active_receivers = {}
 dynamic_meetings = []
 # Initialize AI modules
-llm = GroqLLM()
 transcriber = WhisperTranscriber()
 deepgram_client = DeepgramAI()
 pyannote_client = PyannoteDiarizer()
