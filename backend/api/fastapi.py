@@ -174,26 +174,42 @@ async def schedule_meeting(req: ScheduleRequest):
 
 async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
     try:
-        # Extract and compress audio using ffmpeg to MP3 format (to keep under 25MB Groq limit)
-        audio_path = file_path + ".mp3"
-        print(f"Extracting audio from {file_path} to {audio_path}")
-        # 16kHz, mono, 32kbps MP3
+        import glob
+        
+        # Extract and compress audio using ffmpeg to MP3 format in 30-minute chunks
+        # This guarantees we NEVER hit Groq's 25MB limit even for 10-hour videos
+        chunk_prefix = file_path + "_chunk_"
+        print(f"Extracting and chunking audio from {file_path}")
+        
         subprocess.run(
-            ["ffmpeg", "-y", "-i", file_path, "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1", audio_path],
+            [
+                "ffmpeg", "-y", "-i", file_path, 
+                "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1",
+                "-f", "segment", "-segment_time", "1800", f"{chunk_prefix}%03d.mp3"
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True
         )
         
-        # Read the audio bytes
-        with open(audio_path, "rb") as f:
-            audio_bytes = f.read()
+        # Find all generated chunks
+        chunks = sorted(glob.glob(f"{chunk_prefix}*.mp3"))
+        
+        full_transcript_text = ""
+        
+        for i, chunk_path in enumerate(chunks):
+            print(f"Transcribing chunk {i+1}/{len(chunks)}: {chunk_path}")
+            with open(chunk_path, "rb") as f:
+                audio_bytes = f.read()
             
-        print(f"Transcribing {len(audio_bytes)} bytes...")
-        transcript = await transcriber.transcribe(audio_bytes)
+            transcript_res = await transcriber.transcribe(audio_bytes, extension=".mp3")
+            text = transcript_res if isinstance(transcript_res, str) else transcript_res.text
+            full_transcript_text += text + " "
+            
+        print(f"Transcription complete. Total length: {len(full_transcript_text)}")
         
         # We need a string summary from the model
-        summary = "Uploaded Recording Transcript:\n\n" + (transcript if isinstance(transcript, str) else transcript.text)
+        summary = "Uploaded Recording Transcript:\n\n" + full_transcript_text.strip()
         
         # Add to completed meetings
         dynamic_meetings.insert(0, {
@@ -201,7 +217,7 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
             "title": f"Uploaded: {filename}",
             "status": "completed",
             "participants": 2,
-            "duration": "N/A",
+            "duration": f"{len(chunks) * 30}m approx",
             "summary": summary[:200] + "...",
             "sentiment": "Neutral",
             "full_transcript": summary
@@ -209,13 +225,17 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
         
         # Cleanup
         os.remove(file_path)
-        os.remove(audio_path)
+        for chunk_path in chunks:
+            os.remove(chunk_path)
+            
         print(f"Upload {meeting_id} processed successfully.")
     except Exception as e:
         print(f"Error processing upload {meeting_id}: {e}")
         # Clean up if failed
         if os.path.exists(file_path): os.remove(file_path)
-        if os.path.exists(file_path + ".mp3"): os.remove(file_path + ".mp3")
+        import glob
+        for chunk in glob.glob(file_path + "_chunk_*.mp3"):
+            os.remove(chunk)
 
 @app.post("/meeting/upload", tags=["Meetings"])
 async def upload_meeting_recording(background_tasks: BackgroundTasks, file: UploadFile = File(...)):

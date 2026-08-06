@@ -13,7 +13,7 @@ class WhisperTranscriber:
             print("WARNING: GROQ_API_KEY is not set. Transcription will be mocked.")
         self.model = model_size
 
-    async def transcribe(self, audio_bytes: bytes, language: str = "en") -> str:
+    async def transcribe(self, audio_bytes: bytes, language: str = "en", extension: str = ".wav") -> str:
         """
         Transcribes audio bytes to text using Groq Cloud API.
         """
@@ -23,7 +23,7 @@ class WhisperTranscriber:
         print(f"Transcribing {len(audio_bytes)} bytes using Groq API...")
         
         # Groq requires a file-like object with a filename
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+        with tempfile.NamedTemporaryFile(suffix=extension, delete=False) as temp_audio:
             temp_audio.write(audio_bytes)
             temp_audio_path = temp_audio.name
             
