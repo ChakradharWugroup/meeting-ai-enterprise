@@ -301,6 +301,49 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
         for chunk in glob.glob(file_path + "_chunk_*.mp3"):
             os.remove(chunk)
 
+from fastapi import Form
+chunk_storage = {}
+
+@app.post("/upload-chunk", tags=["Meetings"])
+async def upload_chunk(
+    background_tasks: BackgroundTasks,
+    chunk: UploadFile = File(...),
+    file_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    filename: str = Form(...)
+):
+    try:
+        # Create directory for temp storage if needed
+        os.makedirs("/tmp/uploads", exist_ok=True)
+        temp_path = f"/tmp/uploads/{file_id}"
+        
+        # We append to the temp file
+        # Note: In a production system, we'd ensure chunks arrive in order or write to specific offsets.
+        # Since the frontend will send them sequentially, appending is fine.
+        with open(temp_path, "ab") as f:
+            shutil.copyfileobj(chunk.file, f)
+            
+        if chunk_index == total_chunks - 1:
+            # Final chunk received
+            meeting_id = f"up-{hash(filename) % 10000}"
+            dynamic_meetings.insert(0, {
+                "id": meeting_id,
+                "title": f"Processing: {filename}",
+                "status": "live",
+                "participants": 1,
+                "duration": "0m",
+                "summary": "Extracting audio and crunching AI transcript...",
+                "sentiment": "Processing"
+            })
+            background_tasks.add_task(process_uploaded_file, temp_path, meeting_id, filename)
+            return {"status": "success", "message": "All chunks received. Processing started."}
+            
+        return {"status": "success", "message": f"Chunk {chunk_index+1}/{total_chunks} received."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/meeting/upload", tags=["Meetings"])
 async def upload_meeting_recording(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     try:

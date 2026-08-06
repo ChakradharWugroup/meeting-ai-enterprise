@@ -25,7 +25,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchMeetings = async () => {
       try {
-        const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://meeting-ai-enterprise.onrender.com';
         const res = await fetch(`${apiUrl}/meetings`);
         if (res.ok) {
           const data = await res.json();
@@ -48,7 +48,7 @@ export default function Dashboard() {
     if (!botUrl) return;
     setDispatchStatus('Dispatching...');
     try {
-      const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://meeting-ai-enterprise.onrender.com';
       
       const endpoint = scheduledTime ? '/meeting/schedule' : '/dispatch';
       const payload = scheduledTime ? { url: botUrl, scheduled_time: new Date(scheduledTime).toISOString() } : { url: botUrl };
@@ -77,36 +77,49 @@ export default function Dashboard() {
     const file = e.target.files[0];
     
     setIsUploading(true);
-    setUploadStatus('Uploading file...');
+    setUploadStatus('Preparing infinite upload...');
     
-    const formData = new FormData();
-    formData.append('file', file);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://meeting-ai-enterprise.onrender.com';
+    const chunkSize = 50 * 1024 * 1024; // 50MB chunks
+    const totalChunks = Math.ceil(file.size / chunkSize);
+    const fileId = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     
     try {
-      const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
-      const res = await fetch(`${apiUrl}/meeting/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (res.ok) {
-        setUploadStatus('✅ Upload complete! Processing...');
-      } else {
-        const errorText = await res.text();
-        setUploadStatus(`❌ Upload failed: ${errorText.substring(0, 50)}`);
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunk = file.slice(start, end);
+        
+        const formData = new FormData();
+        formData.append('chunk', chunk);
+        formData.append('file_id', fileId);
+        formData.append('chunk_index', i.toString());
+        formData.append('total_chunks', totalChunks.toString());
+        formData.append('filename', file.name);
+        
+        setUploadStatus(`Uploading chunk ${i + 1} of ${totalChunks} (${Math.round((i/totalChunks)*100)}%)`);
+        
+        const res = await fetch(`${apiUrl}/upload-chunk`, {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
       }
-    } catch (e) {
-      setUploadStatus(`❌ Network error: ${e}`);
+      setUploadStatus('✅ Upload complete! Processing...');
+    } catch (err: any) {
+      setUploadStatus(`❌ Upload failed: ${err.message}`);
     } finally {
       setIsUploading(false);
       setTimeout(() => setUploadStatus(''), 8000);
-      // Reset input
       e.target.value = '';
     }
   };
 
   const handleDownloadPdf = (meetingId: string) => {
-    const apiUrl = 'https://meeting-ai-enterprise.onrender.com';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://meeting-ai-enterprise.onrender.com';
     window.open(`${apiUrl}/meeting/${meetingId}/pdf`, '_blank');
   };
 
