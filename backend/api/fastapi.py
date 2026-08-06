@@ -12,6 +12,7 @@ from backend.ai.whisper import WhisperTranscriber
 from backend.ai.groq import GroqLLM
 from backend.ai.whisper import WhisperTranscriber
 from backend.ai.deepgram_ai import DeepgramAI
+from backend.ai.pyannote_diarizer import PyannoteDiarizer
 from backend.ai.summarizer import MeetingSummarizer
 from backend.teams.webhook import webhook_router
 from backend.api.pdf_generator import generate_meeting_pdf
@@ -46,6 +47,7 @@ dynamic_meetings = []
 llm = GroqLLM()
 transcriber = WhisperTranscriber()
 deepgram_client = DeepgramAI()
+pyannote_client = PyannoteDiarizer()
 summarizer = MeetingSummarizer()
 
 @app.get("/health", tags=["System"])
@@ -224,49 +226,34 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
             # Find all generated chunks
             chunks = sorted(glob.glob(f"{chunk_prefix}*.mp3"))
             
-            current_speaker = "Speaker A"
-            last_end_time = 0.0
-            
             for i, chunk_path in enumerate(chunks):
-                print(f"Transcribing chunk {i+1}/{len(chunks)}: {chunk_path}")
+                print(f"Transcribing and Diarizing chunk {i+1}/{len(chunks)}: {chunk_path}")
                 with open(chunk_path, "rb") as f:
                     audio_bytes = f.read()
                 
+                # Run Groq Whisper
                 transcript_res = await transcriber.transcribe(audio_bytes, extension=".mp3")
+                
+                # Run Pyannote Biometrics locally
+                try:
+                    pyannote_segments = await asyncio.to_thread(pyannote_client.diarize, chunk_path)
+                except Exception as e:
+                    print(f"Pyannote Diarization failed: {e}. Falling back to empty biometrics.")
+                    pyannote_segments = []
                 
                 if isinstance(transcript_res, dict):
                     text = transcript_res.get("text", "")
-                    segments = transcript_res.get("segments", [])
+                    whisper_segments = transcript_res.get("segments", [])
                 else:
                     text = getattr(transcript_res, "text", "")
-                    segments = getattr(transcript_res, "segments", [])
+                    whisper_segments = getattr(transcript_res, "segments", [])
                     
                 full_transcript_text += text + " "
                 chunk_offset = i * 1800 # 30 minutes in seconds
                 
-                for seg in segments:
-                    if isinstance(seg, dict):
-                        start = seg.get("start", 0.0) + chunk_offset
-                        end = seg.get("end", 0.0) + chunk_offset
-                        seg_text = seg.get("text", "").strip()
-                    else:
-                        start = getattr(seg, "start", 0.0) + chunk_offset
-                        end = getattr(seg, "end", 0.0) + chunk_offset
-                        seg_text = getattr(seg, "text", "").strip()
-                        
-                    if not seg_text: continue
-                        
-                    # Heuristic: swap speaker if gap > 1.5s
-                    if start - last_end_time > 1.5:
-                        current_speaker = "Speaker B" if current_speaker == "Speaker A" else "Speaker A"
-                        
-                    all_segments.append({
-                        "speaker": current_speaker,
-                        "start": start,
-                        "end": end,
-                        "text": seg_text
-                    })
-                    last_end_time = end
+                # Align Whisper text with Pyannote biometrics
+                aligned_segs = pyannote_client.align_whisper_pyannote(whisper_segments, pyannote_segments, chunk_offset)
+                all_segments.extend(aligned_segs)
                 
         print(f"Transcription complete. Total length: {len(full_transcript_text)}")
         
