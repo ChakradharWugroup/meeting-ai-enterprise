@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
@@ -33,8 +36,15 @@ COPY teams-bot/ ./teams-bot/
 # Install Node dependencies for Playwright
 RUN cd teams-bot && rm -rf node_modules && npm install playwright ws && npx playwright install --with-deps chromium
 
-# Expose port (Render automatically assigns $PORT, but we default to 8000)
+# Pull Llama3 model into the image
+RUN nohup bash -c "ollama serve &" && sleep 5 && ollama pull llama3
+
+# Expose port
 EXPOSE 8000
 
-# Run the FastAPI server
-CMD sh -c "uvicorn backend.api.fastapi:app --host 0.0.0.0 --port ${PORT:-8000}"
+# Copy and configure entrypoint
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+# Run the FastAPI server with Ollama sidecar
+CMD ["./entrypoint.sh"]
