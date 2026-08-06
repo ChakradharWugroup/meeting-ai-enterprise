@@ -174,12 +174,12 @@ async def schedule_meeting(req: ScheduleRequest):
 
 async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
     try:
-        # Extract and compress audio using ffmpeg
-        audio_path = file_path + ".wav"
+        # Extract and compress audio using ffmpeg to MP3 format (to keep under 25MB Groq limit)
+        audio_path = file_path + ".mp3"
         print(f"Extracting audio from {file_path} to {audio_path}")
-        # 16kHz, mono, 32kbps to heavily compress for Groq's 25MB limit
+        # 16kHz, mono, 32kbps MP3
         subprocess.run(
-            ["ffmpeg", "-y", "-i", file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path],
+            ["ffmpeg", "-y", "-i", file_path, "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1", audio_path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True
@@ -215,7 +215,7 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
         print(f"Error processing upload {meeting_id}: {e}")
         # Clean up if failed
         if os.path.exists(file_path): os.remove(file_path)
-        if os.path.exists(file_path + ".wav"): os.remove(file_path + ".wav")
+        if os.path.exists(file_path + ".mp3"): os.remove(file_path + ".mp3")
 
 @app.post("/meeting/upload", tags=["Meetings"])
 async def upload_meeting_recording(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
