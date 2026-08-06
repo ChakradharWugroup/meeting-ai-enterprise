@@ -9,6 +9,9 @@ import asyncio
 # Import our enterprise modules
 from backend.streaming.audio_receiver import AudioReceiver
 from backend.ai.whisper import WhisperTranscriber
+from backend.ai.groq import GroqLLM
+from backend.ai.whisper import WhisperTranscriber
+from backend.ai.deepgram_ai import DeepgramAI
 from backend.ai.summarizer import MeetingSummarizer
 from backend.teams.webhook import webhook_router
 from backend.api.pdf_generator import generate_meeting_pdf
@@ -39,7 +42,10 @@ app.include_router(webhook_router)
 # In-memory storage for active streams (mocking)
 active_receivers = {}
 dynamic_meetings = []
+# Initialize AI modules
+llm = GroqLLM()
 transcriber = WhisperTranscriber()
+deepgram_client = DeepgramAI()
 summarizer = MeetingSummarizer()
 
 @app.get("/health", tags=["System"])
@@ -176,83 +182,109 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
     try:
         import glob
         
-        # Extract and compress audio using ffmpeg to MP3 format in 30-minute chunks
-        # This guarantees we NEVER hit Groq's 25MB limit even for 10-hour videos
-        chunk_prefix = file_path + "_chunk_"
-        print(f"Extracting and chunking audio from {file_path}")
-        
-        proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-i", file_path, 
-            "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1",
-            "-f", "segment", "-segment_time", "1800", f"{chunk_prefix}%03d.mp3",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL
-        )
-        await proc.communicate()
-        if proc.returncode != 0:
-            raise Exception("ffmpeg failed to process video")
-        
-        # Find all generated chunks
-        chunks = sorted(glob.glob(f"{chunk_prefix}*.mp3"))
-        
         full_transcript_text = ""
         all_segments = []
-        current_speaker = "Speaker A"
-        last_end_time = 0.0
         
-        for i, chunk_path in enumerate(chunks):
-            print(f"Transcribing chunk {i+1}/{len(chunks)}: {chunk_path}")
-            with open(chunk_path, "rb") as f:
-                audio_bytes = f.read()
-            
-            transcript_res = await transcriber.transcribe(audio_bytes, extension=".mp3")
-            
-            if isinstance(transcript_res, dict):
-                text = transcript_res.get("text", "")
-                segments = transcript_res.get("segments", [])
-            else:
-                text = getattr(transcript_res, "text", "")
-                segments = getattr(transcript_res, "segments", [])
+        if deepgram_client.api_key:
+            # OPTION B: Deepgram True Native Diarization
+            audio_path = file_path + ".mp3"
+            print(f"Compressing audio to {audio_path}")
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-y", "-i", file_path, 
+                "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1", audio_path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.communicate()
+            if proc.returncode != 0:
+                raise Exception("ffmpeg failed to process video")
                 
-            full_transcript_text += text + " "
-            chunk_offset = i * 1800 # 30 minutes in seconds
+            print(f"Calling Deepgram API for native diarization...")
+            res = await deepgram_client.transcribe_and_diarize(audio_path)
+            full_transcript_text = res["text"]
+            all_segments = res["segments"]
+            os.remove(audio_path)
             
-            for seg in segments:
-                if isinstance(seg, dict):
-                    start = seg.get("start", 0.0) + chunk_offset
-                    end = seg.get("end", 0.0) + chunk_offset
-                    seg_text = seg.get("text", "").strip()
+        else:
+            # FALLBACK: Chunking + Groq Whisper + Heuristic
+            chunk_prefix = file_path + "_chunk_"
+            print(f"Extracting and chunking audio from {file_path}")
+            
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-y", "-i", file_path, 
+                "-vn", "-acodec", "libmp3lame", "-b:a", "32k", "-ar", "16000", "-ac", "1",
+                "-f", "segment", "-segment_time", "1800", f"{chunk_prefix}%03d.mp3",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.communicate()
+            if proc.returncode != 0:
+                raise Exception("ffmpeg failed to process video")
+            
+            # Find all generated chunks
+            chunks = sorted(glob.glob(f"{chunk_prefix}*.mp3"))
+            
+            current_speaker = "Speaker A"
+            last_end_time = 0.0
+            
+            for i, chunk_path in enumerate(chunks):
+                print(f"Transcribing chunk {i+1}/{len(chunks)}: {chunk_path}")
+                with open(chunk_path, "rb") as f:
+                    audio_bytes = f.read()
+                
+                transcript_res = await transcriber.transcribe(audio_bytes, extension=".mp3")
+                
+                if isinstance(transcript_res, dict):
+                    text = transcript_res.get("text", "")
+                    segments = transcript_res.get("segments", [])
                 else:
-                    start = getattr(seg, "start", 0.0) + chunk_offset
-                    end = getattr(seg, "end", 0.0) + chunk_offset
-                    seg_text = getattr(seg, "text", "").strip()
+                    text = getattr(transcript_res, "text", "")
+                    segments = getattr(transcript_res, "segments", [])
                     
-                if not seg_text: continue
-                    
-                # Heuristic: swap speaker if gap > 1.5s
-                if start - last_end_time > 1.5:
-                    current_speaker = "Speaker B" if current_speaker == "Speaker A" else "Speaker A"
-                    
-                all_segments.append({
-                    "speaker": current_speaker,
-                    "start": start,
-                    "end": end,
-                    "text": seg_text
-                })
-                last_end_time = end
-            
+                full_transcript_text += text + " "
+                chunk_offset = i * 1800 # 30 minutes in seconds
+                
+                for seg in segments:
+                    if isinstance(seg, dict):
+                        start = seg.get("start", 0.0) + chunk_offset
+                        end = seg.get("end", 0.0) + chunk_offset
+                        seg_text = seg.get("text", "").strip()
+                    else:
+                        start = getattr(seg, "start", 0.0) + chunk_offset
+                        end = getattr(seg, "end", 0.0) + chunk_offset
+                        seg_text = getattr(seg, "text", "").strip()
+                        
+                    if not seg_text: continue
+                        
+                    # Heuristic: swap speaker if gap > 1.5s
+                    if start - last_end_time > 1.5:
+                        current_speaker = "Speaker B" if current_speaker == "Speaker A" else "Speaker A"
+                        
+                    all_segments.append({
+                        "speaker": current_speaker,
+                        "start": start,
+                        "end": end,
+                        "text": seg_text
+                    })
+                    last_end_time = end
+                
         print(f"Transcription complete. Total length: {len(full_transcript_text)}")
         
         # We need a string summary from the model
         summary = "Uploaded Recording Transcript:\n\n" + full_transcript_text.strip()
         
         # Add to completed meetings
+        duration_display = "N/A"
+        if all_segments:
+            duration_s = all_segments[-1]["end"]
+            duration_display = f"{int(duration_s // 60)}m {int(duration_s % 60)}s"
+            
         dynamic_meetings.insert(0, {
             "id": meeting_id,
             "title": f"Uploaded: {filename}",
             "status": "completed",
             "participants": 2,
-            "duration": f"{len(chunks) * 30}m approx",
+            "duration": duration_display,
             "summary": summary[:200] + "...",
             "sentiment": "Neutral",
             "full_transcript": full_transcript_text,
@@ -260,9 +292,10 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
         })
         
         # Cleanup
-        os.remove(file_path)
-        for chunk_path in chunks:
-            os.remove(chunk_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        for chunk in glob.glob(file_path + "_chunk_*.mp3"):
+            os.remove(chunk)
             
         print(f"Upload {meeting_id} processed successfully.")
     except Exception as e:
