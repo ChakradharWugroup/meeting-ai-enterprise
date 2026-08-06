@@ -196,6 +196,9 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
         chunks = sorted(glob.glob(f"{chunk_prefix}*.mp3"))
         
         full_transcript_text = ""
+        all_segments = []
+        current_speaker = "Speaker A"
+        last_end_time = 0.0
         
         for i, chunk_path in enumerate(chunks):
             print(f"Transcribing chunk {i+1}/{len(chunks)}: {chunk_path}")
@@ -203,8 +206,40 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
                 audio_bytes = f.read()
             
             transcript_res = await transcriber.transcribe(audio_bytes, extension=".mp3")
-            text = transcript_res if isinstance(transcript_res, str) else transcript_res.text
+            
+            if isinstance(transcript_res, dict):
+                text = transcript_res.get("text", "")
+                segments = transcript_res.get("segments", [])
+            else:
+                text = getattr(transcript_res, "text", "")
+                segments = getattr(transcript_res, "segments", [])
+                
             full_transcript_text += text + " "
+            chunk_offset = i * 1800 # 30 minutes in seconds
+            
+            for seg in segments:
+                if isinstance(seg, dict):
+                    start = seg.get("start", 0.0) + chunk_offset
+                    end = seg.get("end", 0.0) + chunk_offset
+                    seg_text = seg.get("text", "").strip()
+                else:
+                    start = getattr(seg, "start", 0.0) + chunk_offset
+                    end = getattr(seg, "end", 0.0) + chunk_offset
+                    seg_text = getattr(seg, "text", "").strip()
+                    
+                if not seg_text: continue
+                    
+                # Heuristic: swap speaker if gap > 1.5s
+                if start - last_end_time > 1.5:
+                    current_speaker = "Speaker B" if current_speaker == "Speaker A" else "Speaker A"
+                    
+                all_segments.append({
+                    "speaker": current_speaker,
+                    "start": start,
+                    "end": end,
+                    "text": seg_text
+                })
+                last_end_time = end
             
         print(f"Transcription complete. Total length: {len(full_transcript_text)}")
         
@@ -220,7 +255,8 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str):
             "duration": f"{len(chunks) * 30}m approx",
             "summary": summary[:200] + "...",
             "sentiment": "Neutral",
-            "full_transcript": summary
+            "full_transcript": full_transcript_text,
+            "segments": all_segments
         })
         
         # Cleanup
@@ -313,9 +349,10 @@ async def download_meeting_pdf(meeting_id: str):
     
     title = meeting["title"] if meeting else f"Meeting {meeting_id}"
     summary = meeting["summary"] if meeting else "AI Notetaker generated summary."
-    transcript = meeting.get("full_transcript", "") # Use full transcript if it was an uploaded file
+    transcript = meeting.get("full_transcript", "")
+    segments = meeting.get("segments", [])
     
-    pdf_buffer = generate_meeting_pdf(title, summary, transcript)
+    pdf_buffer = generate_meeting_pdf(title, summary, transcript, segments)
     
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M")
     filename = f"Transcript_{current_time}.pdf"

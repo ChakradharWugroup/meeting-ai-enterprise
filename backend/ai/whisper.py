@@ -18,7 +18,7 @@ class WhisperTranscriber:
         Transcribes audio bytes to text using Groq Cloud API.
         """
         if not self.client or len(audio_bytes) < 1000:
-            return "[Mock Transcription] Hello from cloud API."
+            return {"text": "[Mock Transcription] Hello from cloud API.", "segments": [{"start": 0.0, "end": 2.0, "text": "[Mock Transcription] Hello from cloud API."}]}
 
         print(f"Transcribing {len(audio_bytes)} bytes using Groq API...")
         
@@ -32,7 +32,7 @@ class WhisperTranscriber:
                 transcription = self.client.audio.transcriptions.create(
                     file=(temp_audio_path, file.read()),
                     model=self.model,
-                    response_format="text",
+                    response_format="verbose_json",
                     language=language
                 )
             os.remove(temp_audio_path)
