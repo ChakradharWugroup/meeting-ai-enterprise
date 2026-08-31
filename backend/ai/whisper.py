@@ -1,43 +1,45 @@
 import os
-import io
 import tempfile
-from groq import Groq
+import asyncio
 
 class WhisperTranscriber:
-    def __init__(self, model_size: str = "whisper-large-v3"):
-        self.api_key = os.environ.get("GROQ_API_KEY", "")
-        if self.api_key:
-            self.client = Groq(api_key=self.api_key)
-        else:
-            self.client = None
-            print("WARNING: GROQ_API_KEY is not set. Transcription will be mocked.")
-        self.model = model_size
+    def __init__(self):
+        pass
 
-    async def transcribe(self, audio_bytes: bytes, language: str = "en", extension: str = ".wav") -> str:
+    async def transcribe(self, audio_bytes: bytes, language: str = "en", extension: str = ".wav") -> dict:
         """
-        Transcribes audio bytes to text using Groq Cloud API.
+        Transcribes audio bytes to text using Local Whisper AI on GPU.
+        Initializes on-demand to prevent CUDA context pollution.
         """
-        if not self.client or len(audio_bytes) < 1000:
-            return {"text": "[Mock Transcription] Hello from cloud API.", "segments": [{"start": 0.0, "end": 2.0, "text": "[Mock Transcription] Hello from cloud API."}]}
+        if len(audio_bytes) < 1000:
+            return {"text": "", "segments": []}
 
-        print(f"Transcribing {len(audio_bytes)} bytes using Groq API...")
+        print(f"Transcribing {len(audio_bytes)} bytes locally on GPU...")
         
-        # Groq requires a file-like object with a filename
         with tempfile.NamedTemporaryFile(suffix=extension, delete=False) as temp_audio:
             temp_audio.write(audio_bytes)
             temp_audio_path = temp_audio.name
             
         try:
-            with open(temp_audio_path, "rb") as file:
-                transcription = self.client.audio.transcriptions.create(
-                    file=(temp_audio_path, file.read()),
-                    model=self.model,
-                    response_format="verbose_json",
-                    language=language
-                )
+            # Whisper run is CPU/GPU blocking, wrap in asyncio.to_thread
+            def run_whisper():
+                import whisper
+                import torch
+                print("Loading Whisper model on demand...")
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model = whisper.load_model("base", device=device)
+                res = model.transcribe(temp_audio_path, language=language)
+                del model
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                return res
+                
+            result = await asyncio.to_thread(run_whisper)
             os.remove(temp_audio_path)
-            return transcription
+            
+            return result
         except Exception as e:
-            print(f"Groq API Error: {e}")
-            os.remove(temp_audio_path)
-            return f"[Error transcribing: {str(e)}]"
+            print(f"Local Whisper Error: {e}")
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+            return {"text": f"[Error transcribing: {str(e)}]", "segments": []}

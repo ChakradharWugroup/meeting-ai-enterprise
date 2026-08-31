@@ -6,6 +6,7 @@ class AudioReceiver:
     def __init__(self, meeting_id: str):
         self.meeting_id = meeting_id
         self.buffer = AudioStreamBuffer()
+        self.full_audio = bytearray()
         self.is_receiving = False
         self._callbacks = []
 
@@ -29,6 +30,7 @@ class AudioReceiver:
             return
             
         self.buffer.add_chunk(chunk, timestamp)
+        self.full_audio.extend(chunk)
         
         # If we have enough audio for VAD/Processing (e.g. 5 seconds)
         if self.buffer.is_ready_for_processing():

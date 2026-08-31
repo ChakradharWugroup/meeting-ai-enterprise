@@ -1,47 +1,72 @@
 import os
+import warnings
+warnings.filterwarnings("ignore")
 
-HF_TOKEN = os.getenv("HF_TOKEN", "")
+HF_TOKEN = os.getenv("HF_TOKEN", "YOUR_HF_TOKEN_HERE")
 
 class PyannoteDiarizer:
     def __init__(self):
-        self.pipeline = None
-        
-    def _init_pipeline(self):
-        if self.pipeline is not None:
-            return
-            
-        print("Initializing Pyannote Speaker Diarization model (this requires significant RAM)...")
-        try:
-            from pyannote.audio import Pipeline
-            import torch
-            
-            # Use GPU if available, else CPU
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=HF_TOKEN)
-            if self.pipeline:
-                self.pipeline.to(device)
-            else:
-                print("WARNING: Pyannote pipeline could not be loaded. Are you sure the HF_TOKEN has access to the gated model?")
-        except Exception as e:
-            print(f"Failed to load Pyannote pipeline: {e}")
+        pass
 
     def diarize(self, audio_path: str):
-        self._init_pipeline()
-        
-        if not self.pipeline:
-            raise Exception("Pyannote pipeline is not initialized (Missing HF_TOKEN or Insufficient RAM)")
-        
-        print(f"Running true biometric diarization on {audio_path}...")
-        diarization = self.pipeline(audio_path)
-        
-        segments = []
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
-            segments.append({
-                "start": turn.start,
-                "end": turn.end,
-                "speaker": speaker
-            })
-        return segments
+        try:
+            print("Initializing Pyannote Speaker Diarization model on-demand...")
+            from pyannote.audio import Pipeline
+            import torch
+            from pydub import AudioSegment
+            import numpy as np
+            
+            print(f"Running pyannote diarization on {audio_path}...")
+            pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=HF_TOKEN)
+            
+            if torch.cuda.is_available():
+                pipeline.to(torch.device("cuda"))
+            else:
+                pipeline.to(torch.device("cpu"))
+                
+            audio_segment = AudioSegment.from_file(audio_path)
+            audio_segment = audio_segment.set_channels(1).set_frame_rate(16000)
+            
+            sample_rate = audio_segment.frame_rate
+            samples = np.array(audio_segment.get_array_of_samples(), dtype=np.float32)
+            samples = samples / 32768.0
+            
+            waveform = torch.from_numpy(samples).unsqueeze(0)
+            
+            diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate})
+            
+            if hasattr(diarization, "speaker_diarization"):
+                diarization = diarization.speaker_diarization
+                
+            diarization_turns = []
+            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                if speaker.startswith("SPEAKER_"):
+                    try:
+                        spk_id = int(speaker.split("_")[1])
+                        if spk_id < 26:
+                            speaker = f"Speaker {chr(65 + spk_id)}"
+                        else:
+                            speaker = f"Speaker {spk_id + 1}"
+                    except:
+                        pass
+                
+                diarization_turns.append({
+                    "start": float(turn.start),
+                    "end": float(turn.end),
+                    "speaker": speaker
+                })
+            
+            # Explicitly delete pipeline and free GPU memory to prevent OOM
+            del pipeline
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
+            return diarization_turns
+        except Exception as e:
+            print(f"Diarization error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def align_whisper_pyannote(self, whisper_segments: list, pyannote_segments: list, chunk_offset: float = 0.0):
         """
