@@ -599,7 +599,7 @@ async def process_youtube_url(url: str, meeting_id: str):
                 print(f"Failed to detect language: {e}")
 
         # ?€?€ Step 3: Try to use subtitles ONLY in the spoken language ?€?€?€?€?€?€?€?€?€?€?€?€?€
-        subtitle_lang = None
+        subtitle_lang = None`n        available_subs = {}`n        available_auto_subs = {}
         use_auto = False
 
         def find_lang_in_subs(subs_dict, lang_code):
