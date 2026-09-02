@@ -60,7 +60,7 @@ deepgram_client = DeepgramAI()
 pyannote_client = PyannoteDiarizer()
 summarizer = MeetingSummarizer()
 
-os.environ["GEMINI_API_KEY"] = "REDACTED"
+from dotenv import load_dotenv; load_dotenv(); os.environ['GEMINI_API_KEY'] = os.environ.get('GEMINI_API_KEY', '')
 gemini_client = GeminiTranscriber()
 
 @app.get("/health", tags=["System"])

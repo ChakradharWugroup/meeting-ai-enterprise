@@ -2,7 +2,7 @@ import os
 import warnings
 warnings.filterwarnings("ignore")
 
-REDACTED = os.getenv("REDACTED", "REDACTED")
+from dotenv import load_dotenv; load_dotenv(); HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 class PyannoteDiarizer:
     def __init__(self):
@@ -17,7 +17,7 @@ class PyannoteDiarizer:
             import numpy as np
             
             print(f"Running pyannote diarization on {audio_path}...")
-            pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=REDACTED)
+            pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=HF_TOKEN)
             
             if torch.cuda.is_available():
                 pipeline.to(torch.device("cuda"))
