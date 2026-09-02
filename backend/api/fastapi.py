@@ -600,8 +600,6 @@ async def process_youtube_url(url: str, meeting_id: str):
 
         # ?€?€ Step 3: Try to use subtitles ONLY in the spoken language ?€?€?€?€?€?€?€?€?€?€?€?€?€
         subtitle_lang = None
-        available_subs = {}
-        available_auto_subs = {}
         use_auto = False
 
         def find_lang_in_subs(subs_dict, lang_code):
