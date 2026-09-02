@@ -1,0 +1,19 @@
+# Cloud requirements - Gemini API only, no Whisper/Torch/Pyannote/PostgreSQL
+fastapi==0.109.2
+uvicorn==0.27.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-multipart==0.0.9
+sqlalchemy==2.0.25
+python-docx==1.1.0
+reportlab==4.1.0
+websockets
+apscheduler
+tzlocal
+pytz
+aiohttp
+google-genai
+requests
+pydub
+aiofiles
+yt-dlp

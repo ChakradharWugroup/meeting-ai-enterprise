@@ -1,0 +1,17 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+# Use cloud config (points API to meeting_ai_api container)
+RUN cp next.config.cloud.ts next.config.ts
+
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "start"]

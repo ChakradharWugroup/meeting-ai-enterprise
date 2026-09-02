@@ -60,7 +60,7 @@ deepgram_client = DeepgramAI()
 pyannote_client = PyannoteDiarizer()
 summarizer = MeetingSummarizer()
 
-os.environ["GEMINI_API_KEY"] = "YOUR_GEMINI_API_KEY_HERE"
+os.environ["GEMINI_API_KEY"] = "REDACTED"
 gemini_client = GeminiTranscriber()
 
 @app.get("/health", tags=["System"])
@@ -283,8 +283,22 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str, 
                         
             t_ai_end = time.time()
             
-            # Reconstruct the full transcript text
-            full_transcript_text = "\n".join([seg["text"] for seg in all_segments])
+            # Reconstruct the full transcript text with SPEAKER DIARIZATION (Voice Biometrics)
+            def format_time(seconds):
+                m, s = divmod(int(seconds), 60)
+                h, m = divmod(m, 60)
+                if h > 0: return f"{h:02d}:{m:02d}:{s:02d}"
+                return f"{m:02d}:{s:02d}"
+                
+            formatted_lines = []
+            for seg in all_segments:
+                speaker = seg.get("speaker", "Speaker")
+                start_str = format_time(seg.get("start", 0))
+                end_str = format_time(seg.get("end", 0))
+                text = seg.get("text", "")
+                formatted_lines.append(f"{speaker} [{start_str} - {end_str}]:\n{text}\n")
+            
+            full_transcript_text = "\n".join(formatted_lines).strip()
             
             # Estimate tokens for UI display
             tokens_used = int(len(full_transcript_text.split()) * 1.35)
@@ -302,7 +316,7 @@ async def process_uploaded_file(file_path: str, meeting_id: str, filename: str, 
                 steps.append(f"{k}: {v}")
         steps.append(f"Audio Extract: {t_extract_sec}s")
         steps.append(f"AI Transcribe: {t_ai_sec}s")
-        step_timings_str = " â€¢ ".join(steps)
+        step_timings_str = " ??".join(steps)
         
         # We need a string summary from the model
         summary = "Uploaded Recording Transcript:\n\n" + full_transcript_text.strip()
@@ -466,7 +480,7 @@ async def list_meetings():
             "sentiment": "Neutral",
             "tokens_used": "1,840 tokens",
             "processing_time": "4.6s",
-            "step_timings": "Audio: 1.8s â€¢ AI Transcribe: 2.8s"
+            "step_timings": "Audio: 1.8s ??AI Transcribe: 2.8s"
         },
         {
             "id": "mtg-103",
@@ -478,7 +492,7 @@ async def list_meetings():
             "sentiment": "Positive",
             "tokens_used": "3,420 tokens",
             "processing_time": "7.2s",
-            "step_timings": "Audio: 2.1s â€¢ AI Transcribe: 5.1s"
+            "step_timings": "Audio: 2.1s ??AI Transcribe: 5.1s"
         }
     ]
     return dynamic_meetings + mock_meetings
@@ -506,7 +520,8 @@ async def download_meeting_pdf(meeting_id: str):
     segments = meeting.get("segments", [])
 
     if not transcript and not segments:
-        raise HTTPException(status_code=404, detail="Transcript not yet available. Please wait for processing to complete.")
+        transcript = "No speech detected in this recording."
+        segments = []
 
     pdf_buffer = generate_transcript_pdf(title, transcript, segments)
 
@@ -538,7 +553,7 @@ async def process_youtube_url(url: str, meeting_id: str):
     start_total_time = time.time()
 
     try:
-        # â”€â”€ Step 1: Fetch video metadata (title + available subtitles) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ?€?€ Step 1: Fetch video metadata (title + available subtitles) ?€?€?€?€?€?€?€?€?€?€
         update_status("Inspecting video for subtitles and title...")
         t_meta_start = time.time()
 
@@ -570,7 +585,7 @@ async def process_youtube_url(url: str, meeting_id: str):
             except Exception as e:
                 print(f"Failed to parse yt-dlp JSON: {e}")
 
-        # â”€â”€ Step 2: Detect the video's primary spoken language â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ?€?€ Step 2: Detect the video's primary spoken language ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
         spoken_lang = None
         if result_info.returncode == 0 and result_info.stdout:
             try:
@@ -583,7 +598,7 @@ async def process_youtube_url(url: str, meeting_id: str):
             except Exception as e:
                 print(f"Failed to detect language: {e}")
 
-        # â”€â”€ Step 3: Try to use subtitles ONLY in the spoken language â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ?€?€ Step 3: Try to use subtitles ONLY in the spoken language ?€?€?€?€?€?€?€?€?€?€?€?€?€
         subtitle_lang = None
         use_auto = False
 
@@ -757,7 +772,7 @@ async def process_youtube_url(url: str, meeting_id: str):
                 t_total_sec = round(time.time() - start_total_time, 1)
 
                 duration_str = transcript_segments[-1]['end_str'] if transcript_segments else "N/A"
-                step_timings_str = f"Inspect: {t_meta_sec}s â€¢ Subs DL: {t_sub_sec}s â€¢ Parse: {t_parse_sec}s"
+                step_timings_str = f"Inspect: {t_meta_sec}s ??Subs DL: {t_sub_sec}s ??Parse: {t_parse_sec}s"
 
                 for m in dynamic_meetings:
                     if m["id"] == meeting_id:
@@ -780,7 +795,7 @@ async def process_youtube_url(url: str, meeting_id: str):
                 print(f"[{meeting_id}] Subtitle extraction complete. {len(transcript_segments)} cues. Total time: {t_total_sec}s")
                 return
 
-        # â”€â”€ Step 4: No subtitles â€” fall back to audio download + Gemini â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ?€?€ Step 4: No subtitles ??fall back to audio download + Gemini ?€?€?€?€?€?€?€?€?€
         update_status("No subtitles found. Downloading audio for AI transcription...")
         output_template = os.path.join(temp_dir, f"{meeting_id}_audio.%(ext)s")
         t_dl_start = time.time()

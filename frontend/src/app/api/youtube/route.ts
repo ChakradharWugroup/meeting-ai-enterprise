@@ -1,9 +1,9 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const res = await fetch('http://127.0.0.1:8081/youtube', {
+    const res = await fetch('http://meeting_ai_api:8000/youtube', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
